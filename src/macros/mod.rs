@@ -40,6 +40,9 @@ macro_rules! transparent {
         {
             type Inner = $Inner;
             type Outer = $Name <$($gargs)*>;
+            type MutabilityIn = $crate::custom_cast::Shared;
+            type MutabilityOut = $crate::custom_cast::Shared;
+
             #[inline(always)]
             fn ptr_into_inner(outer: *mut Self::Outer) -> *mut Self::Inner {
                 outer as *mut _ as *mut _

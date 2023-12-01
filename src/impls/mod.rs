@@ -11,9 +11,9 @@ use core::{
 
 use crate::{
     custom_cast::{
-        mappings::{WrapArray, WrapManuallyDrop, WrapMaybeUninit, WrapSlice},
-        Covariant, Invariant, MapTo, Mappable, SafeMapping, SafeMappingToInner, SafeMappingToOuter,
-        Wrapper,
+        mappings::{WrapArray, WrapManuallyDrop, WrapMaybeUninit, WrapSlice, WrapCell, WrapUnsafeCell},
+        Covariant, Invariant, MapTo, Mappable, Mutability, SafeMapping, SafeMappingToInner,
+        SafeMappingToOuter, Shared, Unique, Wrapper,
     },
     TransparentMapping,
 };
@@ -21,6 +21,8 @@ use crate::{
 unsafe impl<M: ?Sized + TransparentMapping> TransparentMapping for ManuallyDrop<M> {
     type Inner = ManuallyDrop<M::Inner>;
     type Outer = ManuallyDrop<M::Outer>;
+    type MutabilityIn = Shared;
+    type MutabilityOut = Shared;
 
     #[inline(always)]
     fn ptr_into_inner(outer: *mut Self::Outer) -> *mut Self::Inner {
@@ -43,6 +45,8 @@ impl<T: ?Sized> Wrapper for ManuallyDrop<T> {
 unsafe impl<M: TransparentMapping> TransparentMapping for MaybeUninit<M> {
     type Inner = ManuallyDrop<M::Inner>;
     type Outer = ManuallyDrop<M::Outer>;
+    type MutabilityIn = M::MutabilityIn;
+    type MutabilityOut = M::MutabilityOut;
 
     #[inline(always)]
     fn ptr_into_inner(outer: *mut Self::Outer) -> *mut Self::Inner {
@@ -64,26 +68,32 @@ unsafe impl<M: SafeMappingToOuter> SafeMappingToOuter for MaybeUninit<M> {}
 
 impl<T: ?Sized> Mappable for *const T {
     type Target = T;
+    type Mutability = Shared;
 }
 
 impl<T: ?Sized> Mappable for *mut T {
     type Target = T;
+    type Mutability = Unique;
 }
 
 impl<T: ?Sized> Mappable for NonNull<T> {
     type Target = T;
+    type Mutability = Unique;
 }
 
 impl<T> Mappable for AtomicPtr<T> {
     type Target = T;
+    type Mutability = Unique;
 }
 
 impl<T: ?Sized> Mappable for &T {
     type Target = T;
+    type Mutability = Shared;
 }
 
 impl<T: ?Sized> Mappable for &mut T {
     type Target = T;
+    type Mutability = Unique;
 }
 
 impl<P> Mappable for Pin<P>
@@ -91,6 +101,7 @@ where
     P: Mappable,
 {
     type Target = P::Target;
+    type Mutability = P::Mutability;
 }
 
 impl<P> Mappable for ManuallyDrop<P>
@@ -98,6 +109,7 @@ where
     P: Mappable,
 {
     type Target = P::Target;
+    type Mutability = P::Mutability;
 }
 
 impl<P> Mappable for Option<P>
@@ -105,6 +117,7 @@ where
     P: Mappable,
 {
     type Target = P::Target;
+    type Mutability = P::Mutability;
 }
 
 impl<P, E> Mappable for Result<P, E>
@@ -112,6 +125,7 @@ where
     P: Mappable,
 {
     type Target = P::Target;
+    type Mutability = P::Mutability;
 }
 
 unsafe impl<T: ?Sized, U: ?Sized> MapTo<U> for *const T {
@@ -230,6 +244,8 @@ where
 {
     type Inner = [M::Inner; LEN];
     type Outer = [M::Outer; LEN];
+    type MutabilityIn = M::MutabilityIn;
+    type MutabilityOut = M::MutabilityOut;
 
     fn ptr_into_inner(outer: *mut Self::Outer) -> *mut Self::Inner {
         outer as *mut [M::Inner; LEN]
@@ -265,6 +281,8 @@ where
 {
     type Inner = [M::Inner];
     type Outer = [M::Outer];
+    type MutabilityIn = M::MutabilityIn;
+    type MutabilityOut = M::MutabilityOut;
 
     fn ptr_into_inner(outer: *mut Self::Outer) -> *mut Self::Inner {
         outer as *mut [M::Inner]
@@ -296,6 +314,8 @@ impl<T> Wrapper for [T] {
 unsafe impl<M: ?Sized + TransparentMapping> TransparentMapping for Cell<M> {
     type Inner = Cell<M::Inner>;
     type Outer = Cell<M::Outer>;
+    type MutabilityIn = <M::MutabilityIn as Mutability>::Combine<M::MutabilityOut>;
+    type MutabilityOut = <M::MutabilityOut as Mutability>::Combine<M::MutabilityIn>;
 
     fn ptr_into_inner(outer: *mut Self::Outer) -> *mut Self::Inner {
         M::ptr_into_inner(outer as *mut M::Outer) as *mut Self::Inner
@@ -309,9 +329,15 @@ unsafe impl<M: ?Sized + TransparentMapping> TransparentMapping for Cell<M> {
 unsafe impl<M: ?Sized + SafeMapping> SafeMappingToInner for Cell<M> {}
 unsafe impl<M: ?Sized + SafeMapping> SafeMappingToOuter for Cell<M> {}
 
+impl<T> Wrapper for Cell<T> {
+    type Wrapping = WrapCell<T>;
+}
+
 unsafe impl<M: ?Sized + TransparentMapping> TransparentMapping for UnsafeCell<M> {
     type Inner = Cell<M::Inner>;
     type Outer = Cell<M::Outer>;
+    type MutabilityIn = <M::MutabilityIn as Mutability>::Combine<M::MutabilityOut>;
+    type MutabilityOut = <M::MutabilityOut as Mutability>::Combine<M::MutabilityIn>;
 
     fn ptr_into_inner(outer: *mut Self::Outer) -> *mut Self::Inner {
         M::ptr_into_inner(outer as *mut M::Outer) as *mut Self::Inner
@@ -325,9 +351,15 @@ unsafe impl<M: ?Sized + TransparentMapping> TransparentMapping for UnsafeCell<M>
 unsafe impl<M: ?Sized + SafeMapping> SafeMappingToInner for UnsafeCell<M> {}
 unsafe impl<M: ?Sized + SafeMapping> SafeMappingToOuter for UnsafeCell<M> {}
 
+impl<T> Wrapper for UnsafeCell<T> {
+    type Wrapping = WrapUnsafeCell<T>;
+}
+
 unsafe impl<T> TransparentMapping for Reverse<T> {
     type Inner = T;
     type Outer = Self;
+    type MutabilityIn = Shared;
+    type MutabilityOut = Shared;
 
     fn ptr_into_inner(outer: *mut Self::Outer) -> *mut Self::Inner {
         outer as *mut Self::Inner
@@ -345,6 +377,8 @@ impl<T> Wrapper for Reverse<T> {
 unsafe impl TransparentMapping for str {
     type Inner = [u8];
     type Outer = Self;
+    type MutabilityIn = Shared;
+    type MutabilityOut = Shared;
 
     fn ptr_into_inner(outer: *mut Self::Outer) -> *mut Self::Inner {
         outer as *mut _

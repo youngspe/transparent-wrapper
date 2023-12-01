@@ -4,11 +4,16 @@ use core::{marker::PhantomData, mem::ManuallyDrop};
 
 mod sealed {
     pub trait Variance {}
+    pub trait Mutability {}
 }
 
 pub unsafe trait TransparentMapping {
     type Inner: ?Sized;
     type Outer: ?Sized;
+
+    type MutabilityIn: Mutability;
+    type MutabilityOut: Mutability;
+
     fn ptr_into_inner(outer: *mut Self::Outer) -> *mut Self::Inner;
     fn ptr_into_outer(inner: *mut Self::Inner) -> *mut Self::Outer;
 
@@ -70,6 +75,28 @@ pub unsafe trait SafeMappingToInner: TransparentMapping {}
 pub unsafe trait SafeMappingToOuter: TransparentMapping {}
 pub trait SafeMapping: SafeMappingToInner + SafeMappingToOuter {}
 
+pub trait Mutability: sealed::Mutability {
+    type Combine<M: Mutability>: Mutability;
+}
+pub trait MutabilityFor<P: Mappable>: Mutability {}
+
+#[non_exhaustive]
+pub struct Shared {}
+#[non_exhaustive]
+pub struct Unique {}
+
+impl sealed::Mutability for Shared {}
+impl sealed::Mutability for Unique {}
+impl Mutability for Shared {
+    type Combine<M: Mutability> = M;
+}
+impl Mutability for Unique {
+    type Combine<M: Mutability> = Self;
+}
+
+impl<P: Mappable> MutabilityFor<P> for Shared {}
+impl<P: Mappable<Mutability = Unique>> MutabilityFor<P> for Unique {}
+
 impl<M: ?Sized + SafeMappingToInner + SafeMappingToOuter> SafeMapping for M {}
 
 /// Like transmute but extra risky because it doesn't have any checks for sizeof.
@@ -81,6 +108,7 @@ unsafe fn dangerous_transmute<T, U>(src: T) -> U {
 
 pub trait Mappable {
     type Target: ?Sized;
+    type Mutability: Mutability;
 }
 
 pub trait Variance: sealed::Variance {}
@@ -114,6 +142,7 @@ impl<P, M> MapIn<M> for P
 where
     P: MapTo<M::Inner, Target = M::Outer>,
     M: ?Sized + TransparentMapping,
+    M::MutabilityIn: MutabilityFor<P>,
 {
 }
 
@@ -121,6 +150,7 @@ impl<P, M> MapOut<M> for P
 where
     P: MapTo<M::Outer, Target = M::Inner>,
     M: ?Sized + TransparentMapping,
+    M::MutabilityOut: MutabilityFor<P>,
 {
 }
 
@@ -139,10 +169,6 @@ where
     M: ?Sized + TransparentMapping,
 {
 }
-
-pub trait MapFromSelf: TransparentMapping<Outer = Self> {}
-
-impl<M> MapFromSelf for M where M: ?Sized + TransparentMapping<Outer = M> {}
 
 pub fn as_inner_by<M, P>(outer: P) -> P::Converted
 where
@@ -215,6 +241,8 @@ pub struct Identity<T: ?Sized>(PhantomData<T>);
 unsafe impl<T: ?Sized> TransparentMapping for Identity<T> {
     type Inner = T;
     type Outer = T;
+    type MutabilityIn = Shared;
+    type MutabilityOut = Shared;
 
     fn ptr_into_inner(outer: *mut Self::Outer) -> *mut Self::Inner {
         outer
@@ -233,6 +261,8 @@ pub struct Inverse<M: ?Sized>(PhantomData<fn() -> M>);
 unsafe impl<M: ?Sized + TransparentMapping> TransparentMapping for Inverse<M> {
     type Inner = M::Outer;
     type Outer = M::Inner;
+    type MutabilityIn = M::MutabilityOut;
+    type MutabilityOut = M::MutabilityIn;
 
     fn ptr_into_inner(outer: *mut Self::Outer) -> *mut Self::Inner {
         M::ptr_into_outer(outer)
@@ -262,6 +292,8 @@ where
 {
     type Inner = Inner::Inner;
     type Outer = Outer::Outer;
+    type MutabilityIn = <Outer::MutabilityIn as Mutability>::Combine<Inner::MutabilityIn>;
+    type MutabilityOut = <Inner::MutabilityOut as Mutability>::Combine<Outer::MutabilityOut>;
 
     fn ptr_into_inner(outer: *mut Self::Outer) -> *mut Self::Inner {
         Inner::ptr_into_inner(Outer::ptr_into_inner(outer))

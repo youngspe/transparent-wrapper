@@ -9,30 +9,36 @@ use alloc::{
     vec::Vec,
 };
 
-use crate::custom_cast::{MapTo, Mappable, Covariant};
+use crate::custom_cast::{Covariant, MapTo, Mappable, Shared, Unique};
 
 impl<T: ?Sized> Mappable for Box<T> {
     type Target = T;
+    type Mutability = Unique;
 }
 
 impl<T: ?Sized> Mappable for Rc<T> {
     type Target = T;
+    type Mutability = Shared;
 }
 
 impl<T: ?Sized> Mappable for rc::Weak<T> {
     type Target = T;
+    type Mutability = Shared;
 }
 
 impl<T: ?Sized> Mappable for Arc<T> {
     type Target = T;
+    type Mutability = Shared;
 }
 
 impl<T: ?Sized> Mappable for sync::Weak<T> {
     type Target = T;
+    type Mutability = Shared;
 }
 
 impl<T> Mappable for Vec<T> {
     type Target = T;
+    type Mutability = Unique;
 }
 
 unsafe impl<T: ?Sized, U: ?Sized> MapTo<U> for Box<T> {
