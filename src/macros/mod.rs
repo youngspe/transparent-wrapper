@@ -261,17 +261,17 @@ macro_rules! transparent {
     };
     (@process_fields
         $attr:tt,
-        $name:tt, <{ $gargs:tt, (bounded = $($bounded:tt)* ) $($grest:tt)* }>,
+        $name:tt, <{ $gargs:tt, (bounded = $($gbounded:tt)* ) $($grest:tt)* }>,
         {$(where = $($where:tt)*)?}, $inner:tt,
         $fields:tt, {
             $(#[$field_attr:meta])*
-            $field_vis:vis $field:ident: $($($Field1:ident)?::)* PhantomData<$Field2:ty>
+            $field_vis:vis $field:ident: PhantomData<$Field2:ty>
             $(, $($proc_fields:tt)*)?
         }
     ) => {
         const _: () = {
-            fn<$($gbounded)*> _check_phantom_data(
-                p: ::core::marker::PhantomData<$Field2>,
+            fn _check_phantom_data<$($gbounded)*>(
+                p: PhantomData<$Field2>,
             ) $(where $($where)*)? {
                 let $field: ::core::marker::PhantomData<$Field2> = p;
                 let _ = $field;
@@ -279,7 +279,7 @@ macro_rules! transparent {
         };
 
         $crate::transparent! { @process_fields
-            $attr, $name, <{$gargs, (bounded = $($bounded)* ) $($grest)* }>,
+            $attr, $name, <{$gargs, (bounded = $($gbounded)* ) $($grest)* }>,
             {$(where = $($where)*)?}, $inner, $fields, { $($($proc_fields)*)? }
         }
     };
